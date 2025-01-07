@@ -5,7 +5,7 @@ import com.bumptech.glide.load.Key;
 import java.security.MessageDigest;
 
 /** A cache key for original source data + any requested signature. */
-final class DataCacheKey implements Key {
+final public class DataCacheKey implements Key {
 
   private final Key sourceKey;
   private final Key signature;
@@ -15,8 +15,12 @@ final class DataCacheKey implements Key {
     this.signature = signature;
   }
 
-  Key getSourceKey() {
+  public Key getSourceKey() {
     return sourceKey;
+  }
+
+  public Key getSignature() {
+    return signature;
   }
 
   @Override

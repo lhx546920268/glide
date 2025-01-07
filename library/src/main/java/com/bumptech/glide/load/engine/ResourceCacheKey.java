@@ -11,7 +11,7 @@ import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 
 /** A cache key for downsampled and transformed resource data + any requested signature. */
-final class ResourceCacheKey implements Key {
+final public class ResourceCacheKey implements Key {
   private static final LruCache<Class<?>, byte[]> RESOURCE_CLASS_BYTES = new LruCache<>(50);
   private final ArrayPool arrayPool;
   private final Key sourceKey;
@@ -93,6 +93,14 @@ final class ResourceCacheKey implements Key {
       RESOURCE_CLASS_BYTES.put(decodedResourceClass, result);
     }
     return result;
+  }
+
+  public Key getSourceKey() {
+    return sourceKey;
+  }
+
+  public Key getSignature() {
+    return signature;
   }
 
   @Override
