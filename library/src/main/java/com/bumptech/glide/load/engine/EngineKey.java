@@ -9,7 +9,7 @@ import java.security.MessageDigest;
 import java.util.Map;
 
 /** An in memory only cache key used to multiplex loads. */
-class EngineKey implements Key {
+public class EngineKey implements Key {
   private final Object model;
   private final int width;
   private final int height;
@@ -39,6 +39,10 @@ class EngineKey implements Key {
     this.transcodeClass =
         Preconditions.checkNotNull(transcodeClass, "Transcode class must not be null");
     this.options = Preconditions.checkNotNull(options);
+  }
+
+  public Key getSignature() {
+    return signature;
   }
 
   @Override
