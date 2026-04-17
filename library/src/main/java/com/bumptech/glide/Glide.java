@@ -1,10 +1,12 @@
 package com.bumptech.glide;
 
 import android.app.Activity;
+import android.app.Application;
 import android.content.ComponentCallbacks2;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
+import android.os.Bundle;
 import android.os.MessageQueue.IdleHandler;
 import android.util.Log;
 import android.view.View;
@@ -33,6 +35,7 @@ import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.RequestOptions;
 import com.bumptech.glide.request.target.ImageViewTargetFactory;
 import com.bumptech.glide.request.target.Target;
+import com.bumptech.glide.util.GlideSuppliers;
 import com.bumptech.glide.util.GlideSuppliers.GlideSupplier;
 import com.bumptech.glide.util.Preconditions;
 import com.bumptech.glide.util.Util;
@@ -52,6 +55,10 @@ import java.util.Set;
  */
 public class Glide implements ComponentCallbacks2 {
   private static final String DEFAULT_DISK_CACHE_DIR = "image_manager_disk_cache";
+  private static final String DESTROYED_ACTIVITY_WARNING =
+      "You cannot start a load on a not yet attached View or a Fragment where getActivity() "
+          + "returns null (which usually occurs when getActivity() is called before the Fragment "
+          + "is attached or after the Fragment is destroyed).";
   private static final String TAG = "Glide";
 
   @GuardedBy("Glide.class")
@@ -76,6 +83,13 @@ public class Glide implements ComponentCallbacks2 {
   @GuardedBy("this")
   @Nullable
   private BitmapPreFiller bitmapPreFiller;
+
+  private boolean inBackground = false;
+  private MemoryCategory memoryCategoryInBackground = null;
+  private MemoryCategory memoryCategoryInForeground = MemoryCategory.NORMAL;
+
+  private final GlideSupplier<SetMemoryCategoryOnLifecycleCallbacks> setMemoryCategoryCallbacks =
+      GlideSuppliers.memorize(SetMemoryCategoryOnLifecycleCallbacks::new);
 
   /**
    * Returns a directory with a default name in the private cache directory of the application to
@@ -179,6 +193,11 @@ public class Glide implements ComponentCallbacks2 {
     }
   }
 
+  @VisibleForTesting
+  public static synchronized boolean isInitialized() {
+    return glide != null;
+  }
+
   /**
    * Allows hardware Bitmaps to be used prior to the first frame in the app being drawn as soon as
    * this method is called.
@@ -197,6 +216,7 @@ public class Glide implements ComponentCallbacks2 {
     synchronized (Glide.class) {
       if (glide != null) {
         glide.getContext().getApplicationContext().unregisterComponentCallbacks(glide);
+        glide.unregisterActivityLifecycleCallbacks();
         glide.engine.shutdown();
       }
       glide = null;
@@ -256,6 +276,7 @@ public class Glide implements ComponentCallbacks2 {
     }
     Glide glide = builder.build(applicationContext, manifestModules, annotationGeneratedModule);
     applicationContext.registerComponentCallbacks(glide);
+    glide.registerActivityLifecycleCallbacks();
     Glide.glide = glide;
   }
 
@@ -322,6 +343,12 @@ public class Glide implements ComponentCallbacks2 {
     this.requestManagerRetriever = requestManagerRetriever;
     this.connectivityMonitorFactory = connectivityMonitorFactory;
     this.defaultRequestOptionsFactory = defaultRequestOptionsFactory;
+
+    GlideBuilder.MemoryCategoryInBackground memoryCategoryInBackground =
+        experiments.get(GlideBuilder.MemoryCategoryInBackground.class);
+    if (memoryCategoryInBackground != null) {
+      this.memoryCategoryInBackground = memoryCategoryInBackground.value();
+    }
 
     // This has a circular relationship with Glide and GlideContext in that it depends on both,
     // but it's created by Glide's constructor. In practice this shouldn't matter because the
@@ -505,11 +532,7 @@ public class Glide implements ComponentCallbacks2 {
   private static RequestManagerRetriever getRetriever(@Nullable Context context) {
     // Context could be null for other reasons (ie the user passes in null), but in practice it will
     // only occur due to errors with the Fragment lifecycle.
-    Preconditions.checkNotNull(
-        context,
-        "You cannot start a load on a not yet attached View or a Fragment where getActivity() "
-            + "returns null (which usually occurs when getActivity() is called before the Fragment "
-            + "is attached or after the Fragment is destroyed).");
+    Preconditions.checkNotNull(context, DESTROYED_ACTIVITY_WARNING);
     return Glide.get(context).getRequestManagerRetriever();
   }
 
@@ -546,15 +569,16 @@ public class Glide implements ComponentCallbacks2 {
    *
    * @param activity The activity to use.
    * @return A RequestManager for the given activity that can be used to start a load.
-   * @deprecated Use androidx Activitys instead (ie {@link FragmentActivity}, or {@link
-   *     androidx.appcompat.app.AppCompatActivity}). While this method is safe if {@code activity}
-   *     is in fact a support Activity, non-support Activity's lifecycles will be ignored in future
-   *     changes.
+   * @deprecated This is equivalent to calling {@link #with(Context)} using the application context.
+   *     Use the androidx Activity class instead (ie {@link FragmentActivity}, or {@link
+   *     androidx.appcompat.app.AppCompatActivity}).
+   * @throws IllegalArgumentException if the activity associated with the Glide request is being
+   *     destroyed.
    */
   @NonNull
   @Deprecated
   public static RequestManager with(@NonNull Activity activity) {
-    return getRetriever(activity).get(activity);
+    return with(activity.getApplicationContext());
   }
 
   /**
@@ -562,8 +586,9 @@ public class Glide implements ComponentCallbacks2 {
    * androidx.fragment.app.FragmentActivity}'s lifecycle and that uses the given {@link
    * androidx.fragment.app.FragmentActivity}'s default options.
    *
-   * @param activity The activity to use.
+   * @param activity The activity to use. The activity must not be destroyed.
    * @return A RequestManager for the given FragmentActivity that can be used to start a load.
+   * @throws IllegalArgumentException if the activity is being destroyed.
    */
   @NonNull
   public static RequestManager with(@NonNull FragmentActivity activity) {
@@ -576,6 +601,7 @@ public class Glide implements ComponentCallbacks2 {
    *
    * @param fragment The fragment to use.
    * @return A RequestManager for the given Fragment that can be used to start a load.
+   * @throws IllegalArgumentException if the activity associated with the fragment is destroyed.
    */
   @NonNull
   public static RequestManager with(@NonNull Fragment fragment) {
@@ -588,15 +614,17 @@ public class Glide implements ComponentCallbacks2 {
    *
    * @param fragment The fragment to use.
    * @return A RequestManager for the given Fragment that can be used to start a load.
-   * @deprecated Prefer support Fragments and {@link #with(Fragment)} instead, {@link
-   *     android.app.Fragment} will be deprecated. See
+   * @deprecated This method is identical to calling {@link Glide#with(Context)} using the
+   *     application context. Prefer support Fragments and {@link #with(Fragment)} instead. See
    *     https://github.com/android/android-ktx/pull/161#issuecomment-363270555.
+   * @throws IllegalArgumentException if the activity associated with the fragment is destroyed.
    */
-  @SuppressWarnings("deprecation")
   @Deprecated
   @NonNull
   public static RequestManager with(@NonNull android.app.Fragment fragment) {
-    return getRetriever(fragment.getActivity()).get(fragment);
+    Activity activity = fragment.getActivity();
+    Preconditions.checkNotNull(activity, DESTROYED_ACTIVITY_WARNING);
+    return with(activity.getApplicationContext());
   }
 
   /**
@@ -623,6 +651,7 @@ public class Glide implements ComponentCallbacks2 {
    *
    * @param view The view to search for a containing Fragment or Activity from.
    * @return A RequestManager that can be used to start a load.
+   * @throws IllegalArgumentException if the activity associated with the view is destroyed.
    */
   @NonNull
   public static RequestManager with(@NonNull View view) {
@@ -667,6 +696,11 @@ public class Glide implements ComponentCallbacks2 {
   @Override
   public void onTrimMemory(int level) {
     trimMemory(level);
+    // when level is higher than TRIM_MEMORY_UI_HIDDEN, it indicates that the app is
+    // in the background, limit the memory usage by memoryCategoryInBackground.
+    if (level > TRIM_MEMORY_UI_HIDDEN) {
+      setMemoryCategoryWhenInBackground();
+    }
   }
 
   @Override
@@ -685,5 +719,86 @@ public class Glide implements ComponentCallbacks2 {
     /** Returns a non-null {@link RequestOptions} object. */
     @NonNull
     RequestOptions build();
+  }
+
+  private void registerActivityLifecycleCallbacks() {
+    if (memoryCategoryInBackground != null) {
+      Context context = getContext().getApplicationContext();
+      if (!(context instanceof Application) && Log.isLoggable(TAG, Log.WARN)) {
+        Log.w(
+            TAG,
+            "Glide requires an Application Context. You passed: "
+                + context
+                + ". This will disable setting memory category in background.");
+        return;
+      }
+      ((Application) context).registerActivityLifecycleCallbacks(setMemoryCategoryCallbacks.get());
+    }
+  }
+
+  private void unregisterActivityLifecycleCallbacks() {
+    if (memoryCategoryInBackground != null) {
+      Context context = getContext().getApplicationContext();
+      if (context instanceof Application) {
+        ((Application) context)
+            .unregisterActivityLifecycleCallbacks(setMemoryCategoryCallbacks.get());
+      }
+    }
+  }
+
+  private void setMemoryCategoryWhenInBackground() {
+    if (memoryCategoryInBackground == null || inBackground) {
+      return;
+    }
+    inBackground = true;
+    memoryCategoryInForeground = setMemoryCategory(memoryCategoryInBackground);
+  }
+
+  private void setMemoryCategoryWhenInForeground() {
+    if (memoryCategoryInBackground == null || !inBackground) {
+      return;
+    }
+    inBackground = false;
+    setMemoryCategory(memoryCategoryInForeground);
+  }
+
+  private final class SetMemoryCategoryOnLifecycleCallbacks
+      implements Application.ActivityLifecycleCallbacks {
+    @Override
+    public void onActivityStarted(Activity activity) {
+      // Do nothing.
+    }
+
+    @Override
+    public void onActivityResumed(Activity activity) {
+      // Any activity resumed indicates that the app is no longer in the background,
+      // and we should restore the memory usage to normal.
+      setMemoryCategoryWhenInForeground();
+    }
+
+    @Override
+    public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
+      // Do nothing.
+    }
+
+    @Override
+    public void onActivityDestroyed(Activity activity) {
+      // Do nothing.
+    }
+
+    @Override
+    public void onActivityStopped(Activity activity) {
+      // Do nothing.
+    }
+
+    @Override
+    public void onActivitySaveInstanceState(Activity activity, Bundle outState) {
+      // Do nothing.
+    }
+
+    @Override
+    public void onActivityPaused(Activity activity) {
+      // Do nothing.
+    }
   }
 }

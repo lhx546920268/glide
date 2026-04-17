@@ -21,6 +21,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 /** A prioritized {@link ThreadPoolExecutor} for running jobs in Glide. */
 public final class GlideExecutor implements ExecutorService {
@@ -63,6 +64,11 @@ public final class GlideExecutor implements ExecutorService {
   private static volatile int bestThreadCount;
 
   private final ExecutorService delegate;
+
+  /** The default priority for threads created by Glide. */
+  public static final int DEFAULT_PRIORITY =
+      android.os.Process.THREAD_PRIORITY_BACKGROUND
+          + android.os.Process.THREAD_PRIORITY_MORE_FAVORABLE;
 
   /**
    * Returns a new {@link Builder} with the {@link #DEFAULT_DISK_CACHE_EXECUTOR_THREADS} threads,
@@ -339,6 +345,7 @@ public final class GlideExecutor implements ExecutorService {
             // ignore
           }
         };
+
     /** Logs the uncaught {@link Throwable}s using {@link #TAG} and {@link Log}. */
     UncaughtThrowableStrategy LOG =
         new UncaughtThrowableStrategy() {
@@ -349,6 +356,7 @@ public final class GlideExecutor implements ExecutorService {
             }
           }
         };
+
     /** Rethrows the uncaught {@link Throwable}s to crash the app. */
     // Public API.
     @SuppressWarnings("unused")
@@ -369,9 +377,6 @@ public final class GlideExecutor implements ExecutorService {
   }
 
   private static final class DefaultPriorityThreadFactory implements ThreadFactory {
-    private static final int DEFAULT_PRIORITY =
-        android.os.Process.THREAD_PRIORITY_BACKGROUND
-            + android.os.Process.THREAD_PRIORITY_MORE_FAVORABLE;
 
     @Override
     public Thread newThread(@NonNull Runnable runnable) {
@@ -445,13 +450,14 @@ public final class GlideExecutor implements ExecutorService {
     private int corePoolSize;
     private int maximumPoolSize;
 
-    @NonNull private final ThreadFactory threadFactory = new DefaultPriorityThreadFactory();
+    @NonNull private ThreadFactory threadFactory = new DefaultPriorityThreadFactory();
 
     @NonNull
     private UncaughtThrowableStrategy uncaughtThrowableStrategy = UncaughtThrowableStrategy.DEFAULT;
 
     private String name;
     private long threadTimeoutMillis;
+    private Function<? super Runnable, ? extends Runnable> onExecuteDecorator;
 
     @Synthetic
     Builder(boolean preventNetworkOperations) {
@@ -477,6 +483,22 @@ public final class GlideExecutor implements ExecutorService {
     }
 
     /**
+     * Sets the {@link ThreadFactory} responsible for creating threads and setting their priority.
+     *
+     * <p>Usage of this method may override other options on this builder. No guarantees are
+     * provided with regards to the behavior of this method or how it interacts with other methods
+     * on the builder. Use at your own risk.
+     *
+     * @deprecated This is an experimental method that may be removed without warning in a future
+     *     version.
+     */
+    @Deprecated
+    public Builder setThreadFactory(@NonNull ThreadFactory threadFactory) {
+      this.threadFactory = threadFactory;
+      return this;
+    }
+
+    /**
      * Sets the {@link UncaughtThrowableStrategy} to use for unexpected exceptions thrown by tasks
      * on {@link GlideExecutor}s built by this {@code Builder}.
      */
@@ -494,21 +516,51 @@ public final class GlideExecutor implements ExecutorService {
       return this;
     }
 
+    /**
+     * Sets the decorator to be applied to each runnable executed by the executor.
+     *
+     * <p>This is an experimental method that may be removed without warning in a future version.
+     */
+    public Builder experimentalSetOnExecuteDecorator(
+        Function<? super Runnable, ? extends Runnable> onExecuteDecorator) {
+      this.onExecuteDecorator = onExecuteDecorator;
+      return this;
+    }
+
     /** Builds a new {@link GlideExecutor} with any previously specified options. */
     public GlideExecutor build() {
       if (TextUtils.isEmpty(name)) {
         throw new IllegalArgumentException(
             "Name must be non-null and non-empty, but given: " + name);
       }
-      ThreadPoolExecutor executor =
-          new ThreadPoolExecutor(
-              corePoolSize,
-              maximumPoolSize,
-              /* keepAliveTime= */ threadTimeoutMillis,
-              TimeUnit.MILLISECONDS,
-              new PriorityBlockingQueue<Runnable>(),
-              new DefaultThreadFactory(
-                  threadFactory, name, uncaughtThrowableStrategy, preventNetworkOperations));
+      ThreadFactory factory =
+          new DefaultThreadFactory(
+              threadFactory, name, uncaughtThrowableStrategy, preventNetworkOperations);
+      ThreadPoolExecutor executor;
+      if (onExecuteDecorator != null) {
+        executor =
+            new ThreadPoolExecutor(
+                corePoolSize,
+                maximumPoolSize,
+                /* keepAliveTime= */ threadTimeoutMillis,
+                TimeUnit.MILLISECONDS,
+                new PriorityBlockingQueue<>(),
+                factory) {
+              @Override
+              public void execute(@NonNull Runnable command) {
+                super.execute(onExecuteDecorator.apply(command));
+              }
+            };
+      } else {
+        executor =
+            new ThreadPoolExecutor(
+                corePoolSize,
+                maximumPoolSize,
+                /* keepAliveTime= */ threadTimeoutMillis,
+                TimeUnit.MILLISECONDS,
+                new PriorityBlockingQueue<>(),
+                factory);
+      }
 
       if (threadTimeoutMillis != NO_THREAD_TIMEOUT) {
         executor.allowCoreThreadTimeOut(true);

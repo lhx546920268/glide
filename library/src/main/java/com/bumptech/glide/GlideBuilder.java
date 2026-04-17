@@ -487,6 +487,69 @@ public final class GlideBuilder {
     return this;
   }
 
+  /**
+   * Override the OS thread priority of threads created in {@link
+   * com.bumptech.glide.load.engine.executor.GlideExecutor#DefaultThreadFactory} with {@link
+   * com.bumptech.glide.load.engine.DecodeJob#GLIDE_THREAD_PRIORITY_OVERRIDE} Glide Option.
+   *
+   * <p>This is an experimental API that may be removed in the future.
+   */
+  public GlideBuilder setOverrideGlideThreadPriority(boolean isEnabled) {
+    glideExperimentsBuilder.update(new OverrideGlideThreadPriority(), isEnabled);
+    return this;
+  }
+
+  /**
+   * Set to {@code true} to make Glide use {@link
+   * android.provider.MediaStore#openAssetFileDescriptor(ContentResolver, Uri, String,
+   * CancellationSignal)} when opening {@link android.provider.MediaStore#AUTHORITY} content URIs
+   * when it is available.
+   *
+   * <p>This is an experimental API that may be removed in the future.
+   */
+  public GlideBuilder setUseMediaStoreOpenFileApisIfPossible(boolean isEnabled) {
+    glideExperimentsBuilder.update(new UseMediaStoreOpenFileApisIfPossible(), isEnabled);
+    return this;
+  }
+
+  /**
+   * Set to {@code true} to make Glide use {@link MemoryCategory} to set the memory category when
+   * the app is in the background.
+   *
+   * <p>This is an experimental API that may be removed in the future.
+   */
+  public GlideBuilder setMemoryCategoryInBackground(MemoryCategory memoryCategory) {
+    glideExperimentsBuilder.add(new MemoryCategoryInBackground(memoryCategory));
+    return this;
+  }
+
+  /**
+   * @deprecated This method does nothing. It will be hard coded and removed in a future release
+   *     without further warning.
+   */
+  @Deprecated
+  public GlideBuilder setPreserveGainmapAndColorSpaceForTransformations(boolean isEnabled) {
+    return this;
+  }
+
+  /**
+   * @deprecated This method does nothing. It will be hard coded and removed in a future release
+   *     without further warning.
+   */
+  @Deprecated
+  public GlideBuilder setEnableHardwareGainmapFixOnU(boolean isEnabled) {
+    return this;
+  }
+
+  /**
+   * @deprecated This method does nothing. It will be hard coded and removed in a future release
+   *     without further warning.
+   */
+  @Deprecated
+  public GlideBuilder setDisableHardwareBitmapsOnO(boolean disableHardwareBitmapsOnO) {
+    return this;
+  }
+
   void setRequestManagerFactory(@Nullable RequestManagerFactory factory) {
     this.requestManagerFactory = factory;
   }
@@ -563,7 +626,7 @@ public final class GlideBuilder {
 
     GlideExperiments experiments = glideExperimentsBuilder.build();
     RequestManagerRetriever requestManagerRetriever =
-        new RequestManagerRetriever(requestManagerFactory, experiments);
+        new RequestManagerRetriever(requestManagerFactory);
 
     return new Glide(
         context,
@@ -591,23 +654,27 @@ public final class GlideBuilder {
     }
   }
 
-  /**
-   * This is an internal only class that may be deleted at any time without notice. For internal
-   * users of glide, see the {@code setWaitForFramesAfterTrimMemory(boolean)} method above.
-   */
-  public static final class WaitForFramesAfterTrimMemory implements Experiment {
-    private WaitForFramesAfterTrimMemory() {}
-  }
-
   static final class EnableImageDecoderForBitmaps implements Experiment {}
 
   /** See {@link #setLogRequestOrigins(boolean)}. */
   public static final class LogRequestOrigins implements Experiment {}
 
-  /**
-   * Use {@link com.bumptech.glide.load.model.DirectResourceLoader} instead of {@link
-   * com.bumptech.glide.load.model.ResourceLoader} so that we load resources asynchronously with the
-   * correct theme.
-   */
-  public static final class UseDirectResourceLoader implements Experiment {}
+  /** See {@link #setOverrideGlideThreadPriority(boolean)}. */
+  public static final class OverrideGlideThreadPriority implements Experiment {}
+
+  /** See {@link #setUseMediaStoreOpenFileApisIfPossible(boolean)}. */
+  public static final class UseMediaStoreOpenFileApisIfPossible implements Experiment {}
+
+  /** See {@link #setMemoryCategoryInBackground(MemoryCategory)} */
+  public static final class MemoryCategoryInBackground implements Experiment {
+    private final MemoryCategory memoryCategory;
+
+    MemoryCategoryInBackground(MemoryCategory memoryCategory) {
+      this.memoryCategory = memoryCategory;
+    }
+
+    public MemoryCategory value() {
+      return memoryCategory;
+    }
+  }
 }

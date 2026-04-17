@@ -8,6 +8,7 @@ import android.os.Looper;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.bumptech.glide.load.model.Model;
+import com.bumptech.glide.request.BaseRequestOptions;
 import com.bumptech.glide.request.target.Target;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -150,6 +151,14 @@ public final class Util {
     getUiThreadHandler().post(runnable);
   }
 
+  /**
+   * Posts the given {@code runnable} to the front of the queue on the UI thread using a shared
+   * {@link Handler}.
+   */
+  public static void postAtFrontOfQueueOnUiThread(Runnable runnable) {
+    getUiThreadHandler().postAtFrontOfQueue(runnable);
+  }
+
   /** Removes the given {@code runnable} from the UI threads queue if it is still queued. */
   public static void removeCallbacksOnUiThread(Runnable runnable) {
     getUiThreadHandler().removeCallbacks(runnable);
@@ -238,6 +247,14 @@ public final class Util {
       return ((Model) a).isEquivalentTo(b);
     }
     return a.equals(b);
+  }
+
+  public static boolean bothBaseRequestOptionsNullEquivalentOrEquals(
+      @Nullable BaseRequestOptions<?> a, @Nullable BaseRequestOptions<?> b) {
+    if (a == null) {
+      return b == null;
+    }
+    return a.isEquivalentTo(b);
   }
 
   public static int hashCode(int value) {

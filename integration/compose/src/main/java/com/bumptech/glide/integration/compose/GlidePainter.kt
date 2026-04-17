@@ -1,5 +1,6 @@
 package com.bumptech.glide.integration.compose
 
+import android.graphics.drawable.Animatable
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
@@ -18,6 +19,8 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import com.bumptech.glide.RequestBuilder
 import com.bumptech.glide.integration.ktx.ExperimentGlideFlows
 import com.bumptech.glide.integration.ktx.InternalGlideApi
@@ -29,6 +32,7 @@ import com.bumptech.glide.integration.ktx.flowResolvable
 import com.google.accompanist.drawablepainter.DrawablePainter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
@@ -41,78 +45,118 @@ import kotlinx.coroutines.plus
 internal class GlidePainter
 @OptIn(InternalGlideApi::class)
 constructor(
-  private val requestBuilder: RequestBuilder<Drawable>,
-  private val size: ResolvableGlideSize,
-  scope: CoroutineScope,
+    private val requestBuilder: RequestBuilder<Drawable>,
+    private val size: ResolvableGlideSize,
+    scope: CoroutineScope,
+    private val lifecycleOwner: LifecycleOwner,
 ) : Painter(), RememberObserver {
-  @OptIn(ExperimentGlideFlows::class) internal var status: Status by mutableStateOf(Status.CLEARED)
-  internal val currentDrawable: MutableState<Drawable?> = mutableStateOf(null)
-  private var alpha: Float by mutableStateOf(DefaultAlpha)
-  private var colorFilter: ColorFilter? by mutableStateOf(null)
-  private var delegate: Painter? by mutableStateOf(null)
-  private val scope =
-    scope + SupervisorJob(parent = scope.coroutineContext.job) + Dispatchers.Main.immediate
+    @OptIn(ExperimentGlideFlows::class)
+    internal var status: Status by mutableStateOf(Status.CLEARED)
+    internal val currentDrawable: MutableState<Drawable?> = mutableStateOf(null)
+    private var alpha: Float by mutableStateOf(DefaultAlpha)
+    private var colorFilter: ColorFilter? by mutableStateOf(null)
+    private var delegate: Painter? by mutableStateOf(null)
+    private val scope =
+        scope + SupervisorJob(parent = scope.coroutineContext.job) + Dispatchers.Main.immediate
+    private var currentJob: Job? = null
 
-  override val intrinsicSize: Size
-    get() = delegate?.intrinsicSize ?: Size.Unspecified
-
-  override fun DrawScope.onDraw() {
-    delegate?.apply { draw(size, alpha, colorFilter) }
-  }
-
-  override fun onAbandoned() {
-    (delegate as? RememberObserver)?.onAbandoned()
-  }
-
-  override fun onForgotten() {
-    (delegate as? RememberObserver)?.onForgotten()
-  }
-
-  override fun onRemembered() {
-    (delegate as? RememberObserver)?.onRemembered()
-    launchRequest()
-  }
-
-  @OptIn(ExperimentGlideFlows::class, InternalGlideApi::class)
-  private fun launchRequest() {
-    this.scope.launch {
-      requestBuilder.flowResolvable(size).collect {
-        updateDelegate(
-          when (it) {
-            is Resource -> it.resource
-            is Placeholder -> it.placeholder
-          }
-        )
-        status = it.status
-      }
-    }
-  }
-
-  private fun Drawable.toPainter() =
-    when (this) {
-      is BitmapDrawable -> BitmapPainter(bitmap.asImageBitmap())
-      is ColorDrawable -> ColorPainter(Color(color))
-      else -> DrawablePainter(mutate())
+    init {
+        scope.launch {
+            // If the Lifecycle state is at least STARTED, start the animation. Otherwise, stop the
+            // animation.
+            lifecycleOwner.lifecycle.currentStateFlow.collect {
+                if (it.isAtLeast(Lifecycle.State.STARTED)) {
+                    currentDrawable.value?.let { drawable ->
+                        if (drawable is Animatable) {
+                            drawable.start()
+                        }
+                    }
+                } else {
+                    currentDrawable.value?.let { drawable ->
+                        if (drawable is Animatable) {
+                            drawable.stop()
+                        }
+                    }
+                }
+            }
+        }
     }
 
-  private fun updateDelegate(drawable: Drawable?) {
-    val newDelegate = drawable?.toPainter()
-    val oldDelegate = delegate
-    if (newDelegate !== oldDelegate) {
-      (oldDelegate as? RememberObserver)?.onForgotten()
-      (newDelegate as? RememberObserver)?.onRemembered()
-      currentDrawable.value = drawable
-      delegate = newDelegate
+    override val intrinsicSize: Size
+        get() = delegate?.intrinsicSize ?: Size.Unspecified
+
+    override fun DrawScope.onDraw() {
+        delegate?.apply { draw(size, alpha, colorFilter) }
     }
-  }
 
-  override fun applyAlpha(alpha: Float): Boolean {
-    this.alpha = alpha
-    return true
-  }
+    override fun onAbandoned() {
+        (delegate as? RememberObserver)?.onAbandoned()
+    }
 
-  override fun applyColorFilter(colorFilter: ColorFilter?): Boolean {
-    this.colorFilter = colorFilter
-    return true
-  }
+    override fun onForgotten() {
+        (delegate as? RememberObserver)?.onForgotten()
+        currentJob?.cancel()
+        currentJob = null
+        currentDrawable.value = null
+        delegate = null
+    }
+
+    override fun onRemembered() {
+        (delegate as? RememberObserver)?.onRemembered()
+        if (currentJob == null) {
+            currentJob = launchRequest()
+        }
+        // In case the onRemembered is called after the lifecycle onStop, it will start the
+        // animation,
+        // stop it here again.
+        if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            currentDrawable.value?.let { drawable ->
+                if (drawable is Animatable) {
+                    drawable.stop()
+                }
+            }
+        }
+    }
+
+    @OptIn(ExperimentGlideFlows::class, InternalGlideApi::class)
+    private fun launchRequest() =
+        this.scope.launch {
+            requestBuilder.flowResolvable(size).collect {
+                updateDelegate(
+                    when (it) {
+                        is Resource -> it.resource
+                        is Placeholder -> it.placeholder
+                    }
+                )
+                status = it.status
+            }
+        }
+
+    private fun Drawable.toPainter() =
+        when (this) {
+            is BitmapDrawable -> BitmapPainter(bitmap.asImageBitmap())
+            is ColorDrawable -> ColorPainter(Color(color))
+            else -> DrawablePainter(mutate())
+        }
+
+    private fun updateDelegate(drawable: Drawable?) {
+        val newDelegate = drawable?.toPainter()
+        val oldDelegate = delegate
+        if (newDelegate !== oldDelegate) {
+            (oldDelegate as? RememberObserver)?.onForgotten()
+            (newDelegate as? RememberObserver)?.onRemembered()
+            currentDrawable.value = drawable
+            delegate = newDelegate
+        }
+    }
+
+    override fun applyAlpha(alpha: Float): Boolean {
+        this.alpha = alpha
+        return true
+    }
+
+    override fun applyColorFilter(colorFilter: ColorFilter?): Boolean {
+        this.colorFilter = colorFilter
+        return true
+    }
 }

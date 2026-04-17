@@ -1,7 +1,6 @@
 package com.bumptech.glide.request.target;
 
-import static android.view.ViewGroup.LayoutParams;
-import static android.view.ViewTreeObserver.OnPreDrawListener;
+import static com.bumptech.glide.RobolectricConstants.ROBOLECTRIC_SDK;
 import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
@@ -20,7 +19,9 @@ import android.os.Build;
 import android.view.Display;
 import android.view.View;
 import android.view.View.OnAttachStateChangeListener;
+import android.view.ViewGroup.LayoutParams;
 import android.view.ViewTreeObserver;
+import android.view.ViewTreeObserver.OnPreDrawListener;
 import android.view.WindowManager;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -51,7 +52,7 @@ import org.robolectric.shadows.ShadowView;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(
-    sdk = 19,
+    sdk = ROBOLECTRIC_SDK,
     shadows = {
       ViewTargetTest.SizedShadowView.class,
       ViewTargetTest.PreDrawShadowViewTreeObserver.class
@@ -248,7 +249,8 @@ public class ViewTargetTest {
       target.getSize(cbs[i]);
     }
 
-    int width = 100, height = 111;
+    int width = 100;
+    int height = 111;
     shadowView.setWidth(width).setHeight(height).setIsLaidOut(true);
     shadowObserver.fireOnPreDrawListeners();
 

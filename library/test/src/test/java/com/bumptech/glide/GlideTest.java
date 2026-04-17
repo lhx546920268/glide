@@ -1,5 +1,6 @@
 package com.bumptech.glide;
 
+import static com.bumptech.glide.RobolectricConstants.ROBOLECTRIC_SDK;
 import static com.bumptech.glide.request.RequestOptions.decodeTypeOf;
 import static com.bumptech.glide.request.RequestOptions.errorOf;
 import static com.bumptech.glide.request.RequestOptions.placeholderOf;
@@ -26,7 +27,6 @@ import android.graphics.Color;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
-import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import android.view.ViewGroup;
@@ -82,7 +82,6 @@ import org.mockito.MockitoAnnotations;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 import org.robolectric.RobolectricTestRunner;
-import org.robolectric.Shadows;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
@@ -94,10 +93,9 @@ import org.robolectric.shadow.api.Shadow;
 @LooperMode(LEGACY)
 @RunWith(RobolectricTestRunner.class)
 @Config(
-    sdk = 18,
+    sdk = ROBOLECTRIC_SDK,
     shadows = {
       GlideTest.ShadowFileDescriptorContentResolver.class,
-      GlideTest.ShadowMediaMetadataRetriever.class,
     })
 @SuppressWarnings("unchecked")
 public class GlideTest {
@@ -423,17 +421,17 @@ public class GlideTest {
               public boolean onLoadFailed(
                   GlideException e,
                   Object model,
-                  Target<Drawable> target,
+                  @NonNull Target<Drawable> target,
                   boolean isFirstResource) {
                 throw new RuntimeException("Load failed");
               }
 
               @Override
               public boolean onResourceReady(
-                  Drawable resource,
-                  Object model,
+                  @NonNull Drawable resource,
+                  @NonNull Object model,
                   Target<Drawable> target,
-                  DataSource dataSource,
+                  @NonNull DataSource dataSource,
                   boolean isFirstResource) {
                 return false;
               }
@@ -860,18 +858,6 @@ public class GlideTest {
             "You must first register an AssetFileDescriptor for " + "uri: " + uri);
       }
       return URI_TO_FILE_DESCRIPTOR.get(uri);
-    }
-  }
-
-  @Implements(MediaMetadataRetriever.class)
-  public static class ShadowMediaMetadataRetriever {
-
-    @Implementation
-    @SuppressWarnings("unused")
-    public Bitmap getFrameAtTime() {
-      Bitmap bitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888);
-      Shadows.shadowOf(bitmap).appendDescription(" from MediaMetadataRetriever");
-      return bitmap;
     }
   }
 }

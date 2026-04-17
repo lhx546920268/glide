@@ -12,30 +12,31 @@ buildscript {
     }
 
     dependencies {
-        classpath "com.android.tools.build:gradle:$ANDROID_GRADLE_VERSION"
+        classpath libs.android.gradle
         if (!hasProperty('DISABLE_ERROR_PRONE')) {
-            classpath "net.ltgt.gradle:gradle-errorprone-plugin:$ERROR_PRONE_PLUGIN_VERSION"
+            classpath libs.errorprone.gradle
         }
-        classpath 'com.guardsquare:proguard-gradle:7.1.0'
-        classpath "se.bjurr.violations:violations-gradle-plugin:$VIOLATIONS_PLUGIN_VERSION"
-        classpath "androidx.benchmark:benchmark-gradle-plugin:$ANDROID_X_BENCHMARK_VERSION"
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$JETBRAINS_KOTLIN_VERSION"
-        classpath "com.google.devtools.ksp:com.google.devtools.ksp.gradle.plugin:$KSP_GRADLE_PLUGIN_VERSION"
-        classpath "org.jetbrains.kotlinx:binary-compatibility-validator:$JETBRAINS_KOTLINX_BINARY_COMPATIBILITY_VALIDATOR_VERSION"
-        classpath "org.jetbrains.dokka:dokka-gradle-plugin:$JETBRAINS_DOKKA_VERSION"
+        classpath libs.proguard.gradle
+        classpath libs.violations
+        classpath libs.androidx.benchmark.gradle
+        classpath libs.kotlin.gradle
+        classpath libs.ksp.gradle.plugin
+        classpath libs.coroutines.binarycompat.gradle
+        classpath libs.dokka.gradle
+        classpath libs.vanniktech
+        classpath 'com.guardsquare:proguard-gradle:' + (JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_11) ? '7.3.2' : '7.1.0')
     }
 }
 
-repositories {
-    google()
-    mavenCentral()
+plugins {
+    alias libs.plugins.ktfmt
 }
 
 apply plugin: 'binary-compatibility-validator'
 apply plugin: 'org.jetbrains.dokka'
 
 apiValidation {
-    ignoredProjects += ["ksp", "test", "gallery"]
+    ignoredProjects += ["ksp", "test", "gallery", "integrationtest", "sqljournaldiskcache"]
     nonPublicMarkers += ["com.bumptech.glide.integration.ktx.InternalGlideApi"]
 }
 
@@ -87,7 +88,7 @@ subprojects { project ->
     }
 
     // Exclude packages not intended for public use.
-    if (![
+    if ([
           "testutil",
           "flickr",
           "giphy",
@@ -100,8 +101,24 @@ subprojects { project ->
           "gifencoder",
           "compiler",
           "benchmark",
-          "instrumentation"
+          "integrationtest",
+          "instrumentation",
+          "glide-parent",
+          "integration",
+          "samples",
+          "third_party"
     ].contains(project.getName())) {
+        afterEvaluate {
+            project.apply plugin: 'org.jetbrains.dokka'
+
+            project.tasks.dokkaHtmlPartial.enabled = false
+        }
+    } else {
+        apply plugin: "com.ncorti.ktfmt.gradle"
+        ktfmt {
+            kotlinLangStyle()
+        }
+
         afterEvaluate {
             project.apply plugin: 'org.jetbrains.dokka'
 
@@ -125,6 +142,15 @@ subprojects { project ->
         }
     }
 
+    afterEvaluate {
+        if (project.plugins.hasPlugin("com.android.application")) {
+            project.dependencies {
+                // Hack around some version mismatches: https://stackoverflow.com/questions/75263047/duplicate-class-in-kotlin-android
+                implementation(platform(libs.kotlin.bom))
+            }
+        }
+    }
+
     tasks.withType(JavaCompile) {
         // gifencoder is a legacy project that has a ton of warnings and is basically never
         // modified, so we're not going to worry about cleaning it up.
@@ -135,6 +161,8 @@ subprojects { project ->
             "-Werror",
             //Enable all warnings.
             "-Xlint:all",
+            // Disable warnings about source 7 being obsolete.
+            "-Xlint:-options",
             // Java expects every annotation to have a processor, but we use
             // javax.annotation.Nullable, which doesn't have one.
             "-Xlint:-processing",
@@ -161,7 +189,7 @@ subprojects { project ->
     apply plugin: 'checkstyle'
 
     checkstyle {
-        toolVersion = '8.5'
+        toolVersion = '8.45.1'
     }
 
     checkstyle {
@@ -185,7 +213,7 @@ subprojects { project ->
     task violations(type: ViolationsTask) {
         minSeverity = 'INFO'
         detailLevel = 'VERBOSE'
-        maxViolations = 0
+        maxViolations = 6
         diffMaxViolations = 0
 
         // Formats are listed here: https://github.com/tomasbjerre/violations-lib

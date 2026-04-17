@@ -1,7 +1,7 @@
 Glide
 =====
 
-[![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.github.bumptech.glide/glide/badge.svg)](https://maven-badges.herokuapp.com/maven-central/com.github.bumptech.glide/glide) [![Build Status](https://travis-ci.org/bumptech/glide.svg?branch=master)](https://travis-ci.org/bumptech/glide)
+[![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.github.bumptech.glide/glide/badge.svg)](https://maven-badges.herokuapp.com/maven-central/com.github.bumptech.glide/glide)
 | [View Glide's documentation][20] | [简体中文文档][22] | [Report an issue with Glide][5]
 
 Glide is a fast and efficient open source media management and image loading framework for Android that wraps media
@@ -26,13 +26,12 @@ Or use Gradle:
 
 ```gradle
 repositories {
-  google()
+  google()
   mavenCentral()
 }
 
 dependencies {
-  implementation 'com.github.bumptech.glide:glide:4.15.0'
-  annotationProcessor 'com.github.bumptech.glide:compiler:4.15.0'
+  implementation 'com.github.bumptech.glide:glide:5.0.5'
 }
 ```
 
@@ -42,13 +41,7 @@ Or Maven:
 <dependency>
   <groupId>com.github.bumptech.glide</groupId>
   <artifactId>glide</artifactId>
-  <version>4.15.0</version>
-</dependency>
-<dependency>
-  <groupId>com.github.bumptech.glide</groupId>
-  <artifactId>compiler</artifactId>
-  <version>4.15.0</version>
-  <optional>true</optional>
+  <version>5.0.5</version>
 </dependency>
 ```
 
@@ -72,7 +65,7 @@ Simple use cases will look something like this:
   ...
   ImageView imageView = (ImageView) findViewById(R.id.my_image_view);
 
-  Glide.with(this).load("http://goo.gl/gEgYUd").into(imageView);
+  Glide.with(this).load("https://goo.gl/gEgYUd").into(imageView);
 }
 
 // For a simple image list:
