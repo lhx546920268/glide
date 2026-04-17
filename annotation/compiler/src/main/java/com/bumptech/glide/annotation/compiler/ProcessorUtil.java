@@ -28,6 +28,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import javax.annotation.Nullable;
 import javax.annotation.processing.ProcessingEnvironment;
@@ -548,7 +549,7 @@ final class ProcessorUtil {
         continue;
       }
 
-      var entries = annotationMirror.getElementValues().entrySet();
+      Set<? extends Map.Entry<? extends ExecutableElement, ? extends AnnotationValue>> entries = annotationMirror.getElementValues().entrySet();
       if (entries.size() != 1) {
         throw new IllegalArgumentException("Expected single value, but found: " + entries);
       }
