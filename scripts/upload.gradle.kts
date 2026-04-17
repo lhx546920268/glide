@@ -21,7 +21,9 @@ if (pluginManager.hasPlugin("java") || pluginManager.hasPlugin("java-library")) 
 
 // Sign and fill out POM
 extensions.findByName("mavenPublishing")?.withGroovyBuilder {
-  "signAllPublications"()
+  if (System.getenv("JITPACK") == null) {
+    "signAllPublications"()
+  }
 
   "pom" {
     "licenses" {
