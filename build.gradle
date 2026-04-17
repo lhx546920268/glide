@@ -2,15 +2,6 @@ import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import se.bjurr.violations.gradle.plugin.ViolationsTask
 
 buildscript {
-    repositories {
-        maven { url 'https://maven.aliyun.com/repository/public' }
-        maven { url 'https://maven.aliyun.com/repository/google' }
-        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-
     dependencies {
         classpath libs.android.gradle
         if (!hasProperty('DISABLE_ERROR_PRONE')) {
@@ -66,18 +57,6 @@ afterEvaluate {
 }
 
 subprojects { project ->
-    repositories {
-        maven { url 'https://maven.aliyun.com/repository/public' }
-        maven { url 'https://maven.aliyun.com/repository/google' }
-        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
-        google()
-        mavenCentral()
-        maven {
-            url "https://oss.sonatype.org/content/repositories/snapshots"
-        }
-        gradlePluginPortal()
-    }
-
     afterEvaluate {
         if (!project.plugins.hasPlugin("org.jetbrains.kotlin.jvm")) {
             tasks.withType(JavaCompile) {
